@@ -220,6 +220,8 @@ class MathTrainer:
     def generate_output(self, input_ids, max_output_len=10):
         """Generate output sequence for given input using autoregressive generation"""
         self.model.eval()
+
+        id_to_token = self.vocab_data['id_to_token']
         
         with torch.no_grad():
             # Start with input sequence
@@ -238,6 +240,10 @@ class MathTrainer:
                 
                 # Add to generated tokens
                 generated_tokens.append(next_token)
+                # res = ""
+                # for token in generated_tokens:
+                #     res += id_to_token[str(token)]
+                # print(res)
                 
                 # Stop if we predict END token
                 if next_token == 2:  # <END> token
