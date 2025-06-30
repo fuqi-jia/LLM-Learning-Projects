@@ -265,7 +265,7 @@ def main():
     parser.add_argument('--max_numbers', type=int, default=5, help='Maximum number of addends')
     parser.add_argument('--max_value', type=int, default=100, help='Maximum value of numbers')
     parser.add_argument('--min_numbers', type=int, default=2, help='Minimum number of addends')
-    parser.add_argument('--output_dir', type=str, default='./data_output', help='Output directory')
+    parser.add_argument('--output_dir', type=str, default='/dataset', help='Output directory')
     parser.add_argument('--train_ratio', type=float, default=0.8, help='Training set ratio')
     parser.add_argument('--val_ratio', type=float, default=0.1, help='Validation set ratio')
     parser.add_argument('--test_ratio', type=float, default=0.1, help='Test set ratio')
