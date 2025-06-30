@@ -279,18 +279,20 @@ class PositionalEncoding(nn.Module):
         Add positional encoding to input embeddings
         
         Args:
-            x (Tensor): Input embeddings [seq_len, batch_size, d_model] or [batch_size, seq_len, d_model]
+            x (Tensor): Input embeddings [batch_size, seq_len, d_model]
             
         Returns:
             Tensor: Input embeddings + positional encoding
         """
-        # Add positional encoding to input
-        # x.size(0) should be seq_len if input format is [seq_len, batch_size, d_model]
-        # For [batch_size, seq_len, d_model], we need x.size(1)
-        if len(x.shape) == 3 and x.size(1) > x.size(0):  # Likely [batch_size, seq_len, d_model]
-            return x + self.pe[:x.size(1), :].transpose(0, 1)
-        else:  # [seq_len, batch_size, d_model]
-            return x + self.pe[:x.size(0), :]
+        # x is expected to be [batch_size, seq_len, d_model]
+        seq_len = x.size(1)
+        
+        # Get positional encoding for the sequence length and adjust dimensions
+        # self.pe is [max_len, 1, d_model], we want [1, seq_len, d_model]
+        pe = self.pe[:seq_len, :].transpose(0, 1)  # [1, seq_len, d_model]
+        
+        # Add positional encoding (broadcasting over batch dimension)
+        return x + pe
 
 
 class TransformerBlock(nn.Module):

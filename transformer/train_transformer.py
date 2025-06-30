@@ -107,7 +107,7 @@ class MathTrainer:
         
         # Learning rate scheduler
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, mode='min', factor=0.5, patience=5, verbose=True
+            self.optimizer, mode='min', factor=0.5, patience=5
         )
         
         # Training history
@@ -143,10 +143,10 @@ class MathTrainer:
             self.optimizer.zero_grad()
             outputs = self.model(inputs)
             
-                         # Calculate loss
-             loss = self.criterion(outputs.reshape(-1, outputs.size(-1)), targets.reshape(-1))
-             
-             # Backward pass
+            # Calculate loss
+            loss = self.criterion(outputs.reshape(-1, outputs.size(-1)), targets.reshape(-1))
+            
+            # Backward pass
             loss.backward()
             
             # Gradient clipping
@@ -182,9 +182,9 @@ class MathTrainer:
                 # Forward pass
                 outputs = self.model(inputs)
                 
-                                 # Calculate loss
-                 loss = self.criterion(outputs.reshape(-1, outputs.size(-1)), targets.reshape(-1))
-                 total_loss += loss.item()
+                # Calculate loss
+                loss = self.criterion(outputs.reshape(-1, outputs.size(-1)), targets.reshape(-1))
+                total_loss += loss.item()
                 
                 # Calculate accuracy (exact match for complete sequences)
                 batch_correct = self.calculate_sequence_accuracy(batch, input_ids)

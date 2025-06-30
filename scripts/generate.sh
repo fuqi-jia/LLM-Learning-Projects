@@ -300,7 +300,7 @@ if $PYTHON_CMD; then
     print_success "You can now use these datasets to train your Transformer model!"
     print_info "Next steps:"
     echo "  1. Check the generated files in $OUTPUT_DIR"
-    echo "  2. Use the training script: scripts/train_transformer.sh"
+    echo "  2. Use the training script: python train.py --data_dir $OUTPUT_DIR"
     echo "  3. Monitor training progress and adjust hyperparameters as needed"
     
 else

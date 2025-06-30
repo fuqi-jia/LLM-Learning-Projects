@@ -245,10 +245,14 @@ validate_positive_int() {
 }
 
 validate_positive_float() {
-    if ! [[ "$1" =~ ^[0-9]*\.?[0-9]+$ ]] || (( $(echo "$1 <= 0" | bc -l) )); then
-        return 1
+    # Support regular decimals and scientific notation (e.g., 1e-4, 2.5e-3)
+    if [[ "$1" =~ ^[0-9]*\.?[0-9]+([eE][+-]?[0-9]+)?$ ]] || [[ "$1" =~ ^[0-9]+[eE][+-]?[0-9]+$ ]]; then
+        # Use python to check if the number is positive (more reliable than bc)
+        if python -c "import sys; sys.exit(0 if float('$1') > 0 else 1)" 2>/dev/null; then
+            return 0
+        fi
     fi
-    return 0
+    return 1
 }
 
 # Validate inputs
@@ -289,7 +293,7 @@ if ! validate_positive_int "$D_FF"; then
     exit 1
 fi
 
-if ! validate_positive_float "$DROPOUT" || (( $(echo "$DROPOUT >= 1" | bc -l) )); then
+if ! validate_positive_float "$DROPOUT" || ! python -c "import sys; sys.exit(0 if 0 < float('$DROPOUT') < 1 else 1)" 2>/dev/null; then
     print_error "Dropout rate must be between 0 and 1"
     exit 1
 fi
@@ -376,7 +380,7 @@ echo ""
 ESTIMATED_PARAMS=$((D_MODEL * D_MODEL * 4 * N_LAYERS + D_MODEL * D_FF * 2 * N_LAYERS + D_MODEL * 15))
 ESTIMATED_SIZE_MB=$((ESTIMATED_PARAMS * 4 / 1024 / 1024))
 
-print_info "Estimated model parameters: $(printf "%'d" $ESTIMATED_PARAMS)"
+print_info "Estimated model parameters: $(printf "%d" $ESTIMATED_PARAMS)"
 print_info "Estimated model size: ${ESTIMATED_SIZE_MB}MB"
 
 if [ "$EPOCHS" -gt 20 ] && [ "$D_MODEL" -gt 256 ]; then
@@ -385,7 +389,7 @@ fi
 
 # Ask for confirmation for long training
 if [ "$EPOCHS" -gt 50 ] && [ -z "$TEST_ONLY" ]; then
-    read -p "$(echo -e ${YELLOW}[WARNING]${NC} Long training detected ($EPOCHS epochs). Continue? [y/N]: )" -n 1 -r
+    read -p "$((echo -e ${YELLOW}[WARNING]${NC} Long training detected ($EPOCHS epochs). Continue? [y/N]: ))" -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         print_info "Training cancelled by user"
@@ -442,7 +446,7 @@ if $PYTHON_CMD; then
     END_TIME=$(date +%s)
     DURATION=$((END_TIME - START_TIME))
     HOURS=$((DURATION / 3600))
-    MINUTES=$(((DURATION % 3600) / 60))
+    MINUTES=$(( (DURATION % 3600) / 60 ))
     SECONDS=$((DURATION % 60))
     
     print_success "Training completed successfully!"
