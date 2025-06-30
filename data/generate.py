@@ -157,28 +157,23 @@ class MathDataGenerator:
         
     def create_training_example(self) -> Dict[str, List[int]]:
         """
-        Create a training example
+        Create a training example for decoder-only architecture
         
         Returns:
-            Dict: Dictionary containing input and output
+            Dict: Dictionary containing complete sequence
         """
         expression, result = self.generate_expression()
         
-        # Create input sequence: <START> + expression + = 
-        input_text = f"<START>{expression}="
-        input_ids = self.tokenize(input_text)
-        
-        # Create output sequence: result + <END>
-        output_text = f"{result}<END>"
-        output_ids = self.tokenize(output_text)
+        # Create complete sequence: <START> + expression + = + result + <END>
+        sequence_text = f"<START>{expression}={result}<END>"
+        sequence_ids = self.tokenize(sequence_text)
         
         return {
-            'input_ids': input_ids,
-            'output_ids': output_ids,
+            'sequence_ids': sequence_ids,
+            'sequence_text': sequence_text,
             'expression': expression,
             'result': result,
-            'input_text': input_text,
-            'output_text': output_text
+            'length': len(sequence_ids)
         }
         
     def generate_dataset(self, num_samples: int) -> List[Dict]:
