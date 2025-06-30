@@ -218,35 +218,40 @@ class MathTrainer:
         return correct
     
     def generate_output(self, input_ids, max_output_len=10):
-        """Generate output sequence for given input"""
+        """Generate output sequence for given input using autoregressive generation"""
         self.model.eval()
         
         with torch.no_grad():
             # Start with input sequence
             current_seq = input_ids.clone()
+            generated_tokens = []
             
-            for _ in range(max_output_len):
-                # Get predictions
+            for step in range(max_output_len):
+                # Get predictions for current sequence
                 outputs = self.model(current_seq)
                 
-                # Get next token (last position)
-                next_token = torch.argmax(outputs[0, -1, :]).unsqueeze(0).unsqueeze(0)
+                # Get logits for the last position
+                next_token_logits = outputs[0, -1, :]  # [vocab_size]
+                
+                # Use greedy decoding (argmax) for deterministic results
+                next_token = torch.argmax(next_token_logits).item()
+                
+                # Add to generated tokens
+                generated_tokens.append(next_token)
                 
                 # Stop if we predict END token
-                if next_token.item() == 2:  # <END> token
-                    current_seq = torch.cat([current_seq, next_token], dim=1)
+                if next_token == 2:  # <END> token
                     break
                 
-                # Add predicted token to sequence
-                current_seq = torch.cat([current_seq, next_token], dim=1)
+                # Add predicted token to sequence for next iteration
+                next_token_tensor = torch.tensor([[next_token]], device=current_seq.device)
+                current_seq = torch.cat([current_seq, next_token_tensor], dim=1)
                 
-                # Stop if sequence gets too long
+                # Safety check to prevent infinite loops
                 if current_seq.size(1) > input_ids.size(1) + max_output_len:
                     break
         
-        # Extract only the generated part (after input)
-        generated_part = current_seq[0, input_ids.size(1):].tolist()
-        return generated_part
+        return generated_tokens
     
     def train(self):
         """Main training loop"""

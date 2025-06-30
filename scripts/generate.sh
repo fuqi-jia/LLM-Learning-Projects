@@ -17,6 +17,7 @@ DEFAULT_NUM_SAMPLES=10000
 DEFAULT_MAX_NUMBERS=5
 DEFAULT_MAX_VALUE=100
 DEFAULT_MIN_NUMBERS=2
+DEFAULT_MAX_RESULT=200
 DEFAULT_OUTPUT_DIR="./dataset"
 DEFAULT_TRAIN_RATIO=0.8
 DEFAULT_VAL_RATIO=0.1
@@ -51,6 +52,7 @@ show_usage() {
     echo "  -x, --max-numbers NUM     Maximum number of addends (default: $DEFAULT_MAX_NUMBERS)"
     echo "  -v, --max-value NUM       Maximum value of numbers (default: $DEFAULT_MAX_VALUE)"
     echo "  -m, --min-numbers NUM     Minimum number of addends (default: $DEFAULT_MIN_NUMBERS)"
+    echo "  -r, --max-result NUM      Maximum result value for training stability (default: $DEFAULT_MAX_RESULT)"
     echo "  -o, --output-dir DIR      Output directory (default: $DEFAULT_OUTPUT_DIR)"
     echo "  -t, --train-ratio RATIO   Training set ratio (default: $DEFAULT_TRAIN_RATIO)"
     echo "  -a, --val-ratio RATIO     Validation set ratio (default: $DEFAULT_VAL_RATIO)"
@@ -76,6 +78,7 @@ NUM_SAMPLES=$DEFAULT_NUM_SAMPLES
 MAX_NUMBERS=$DEFAULT_MAX_NUMBERS
 MAX_VALUE=$DEFAULT_MAX_VALUE
 MIN_NUMBERS=$DEFAULT_MIN_NUMBERS
+MAX_RESULT=$DEFAULT_MAX_RESULT
 OUTPUT_DIR=$DEFAULT_OUTPUT_DIR
 TRAIN_RATIO=$DEFAULT_TRAIN_RATIO
 VAL_RATIO=$DEFAULT_VAL_RATIO
@@ -99,6 +102,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -m|--min-numbers)
             MIN_NUMBERS="$2"
+            shift 2
+            ;;
+        -r|--max-result)
+            MAX_RESULT="$2"
             shift 2
             ;;
         -o|--output-dir)
@@ -125,6 +132,7 @@ while [[ $# -gt 0 ]]; do
             NUM_SAMPLES=1000
             MAX_NUMBERS=3
             MAX_VALUE=50
+            MAX_RESULT=100
             MIN_NUMBERS=2
             shift
             ;;
@@ -132,13 +140,15 @@ while [[ $# -gt 0 ]]; do
             NUM_SAMPLES=50000
             MAX_NUMBERS=4
             MAX_VALUE=100
+            MAX_RESULT=200
             MIN_NUMBERS=2
             shift
             ;;
         --large)
             NUM_SAMPLES=500000
             MAX_NUMBERS=6
-            MAX_VALUE=999
+            MAX_VALUE=300
+            MAX_RESULT=500
             MIN_NUMBERS=2
             shift
             ;;
@@ -146,6 +156,7 @@ while [[ $# -gt 0 ]]; do
             NUM_SAMPLES=100
             MAX_NUMBERS=2
             MAX_VALUE=10
+            MAX_RESULT=20
             MIN_NUMBERS=2
             shift
             ;;
@@ -187,6 +198,11 @@ if ! [[ "$MAX_VALUE" =~ ^[0-9]+$ ]] || [ "$MAX_VALUE" -le 0 ]; then
     exit 1
 fi
 
+if ! [[ "$MAX_RESULT" =~ ^[0-9]+$ ]] || [ "$MAX_RESULT" -le 0 ]; then
+    print_error "Maximum result must be a positive integer"
+    exit 1
+fi
+
 # Check if Python is available
 if ! command -v python &> /dev/null; then
     print_error "Python is not installed or not in PATH"
@@ -204,6 +220,7 @@ print_info "Dataset Generation Configuration:"
 echo "  📊 Number of samples: $NUM_SAMPLES"
 echo "  🔢 Number range: $MIN_NUMBERS-$MAX_NUMBERS addends"
 echo "  📈 Value range: 1-$MAX_VALUE"
+echo "  🎯 Max result: $MAX_RESULT (for training stability)"
 echo "  📁 Output directory: $OUTPUT_DIR"
 echo "  📋 Dataset split: train($TRAIN_RATIO) / val($VAL_RATIO) / test($TEST_RATIO)"
 echo "  🎲 Random seed: $SEED"
@@ -253,6 +270,7 @@ PYTHON_CMD="$PYTHON_CMD --num_samples $NUM_SAMPLES"
 PYTHON_CMD="$PYTHON_CMD --max_numbers $MAX_NUMBERS"
 PYTHON_CMD="$PYTHON_CMD --max_value $MAX_VALUE"
 PYTHON_CMD="$PYTHON_CMD --min_numbers $MIN_NUMBERS"
+PYTHON_CMD="$PYTHON_CMD --max_result $MAX_RESULT"
 PYTHON_CMD="$PYTHON_CMD --output_dir $OUTPUT_DIR"
 PYTHON_CMD="$PYTHON_CMD --train_ratio $TRAIN_RATIO"
 PYTHON_CMD="$PYTHON_CMD --val_ratio $VAL_RATIO"

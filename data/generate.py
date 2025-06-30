@@ -8,7 +8,7 @@ import argparse
 class MathDataGenerator:
     """Math Data Generator"""
     
-    def __init__(self, max_numbers=5, max_value=100, min_numbers=2):
+    def __init__(self, max_numbers=5, max_value=100, min_numbers=2, max_result=200):
         """
         Initialize the data generator
         
@@ -16,10 +16,12 @@ class MathDataGenerator:
             max_numbers: Maximum number of addends
             max_value: Maximum value of numbers
             min_numbers: Minimum number of addends
+            max_result: Maximum result value for regularization
         """
         self.max_numbers = max_numbers
         self.max_value = max_value
         self.min_numbers = min_numbers
+        self.max_result = max_result  # Add result limit for training stability
         
         # Build vocabulary
         self.build_vocab()
@@ -47,7 +49,7 @@ class MathDataGenerator:
         
     def generate_expression(self) -> Tuple[str, int]:
         """
-        Generate an addition expression
+        Generate an addition expression with regularization for training stability
         
         Returns:
             Tuple[str, int]: (expression, result)
@@ -55,12 +57,59 @@ class MathDataGenerator:
         # Randomly determine the number of addends
         num_count = random.randint(self.min_numbers, self.max_numbers)
         
-        # Generate random numbers
-        numbers = [random.randint(1, self.max_value) for _ in range(num_count)]
+        # Generate numbers with bias towards smaller values for training stability
+        # Use exponential distribution to favor smaller numbers
+        numbers = []
+        for _ in range(num_count):
+            # Generate with bias towards smaller numbers
+            # 70% chance for numbers 1-20, 20% for 21-50, 10% for 51-max_value
+            rand = random.random()
+            if rand < 0.7:
+                # Small numbers (1-20 or up to min(20, max_value))
+                max_small = min(20, self.max_value)
+                number = random.randint(1, max_small)
+            elif rand < 0.9:
+                # Medium numbers (21-50 or appropriate range)
+                min_medium = min(21, self.max_value)
+                max_medium = min(50, self.max_value)
+                if min_medium <= max_medium:
+                    number = random.randint(min_medium, max_medium)
+                else:
+                    number = random.randint(1, self.max_value)
+            else:
+                # Large numbers (51-max_value)
+                min_large = min(51, self.max_value)
+                if min_large <= self.max_value:
+                    number = random.randint(min_large, self.max_value)
+                else:
+                    number = random.randint(1, self.max_value)
+            
+            numbers.append(number)
+        
+        # Check if result exceeds maximum allowed result
+        result = sum(numbers)
+        
+        # If result is too large, regenerate with smaller numbers
+        if result > self.max_result:
+            # Fallback: generate smaller numbers that definitely fit
+            target_avg = self.max_result // (num_count + 1)  # Leave some margin
+            numbers = []
+            for _ in range(num_count):
+                # Generate numbers around the target average
+                min_val = max(1, target_avg - 10)
+                max_val = min(self.max_value, target_avg + 10)
+                numbers.append(random.randint(min_val, max_val))
+            
+            result = sum(numbers)
+            
+            # Final safety check
+            if result > self.max_result:
+                # Last resort: use very small numbers
+                numbers = [random.randint(1, min(10, self.max_value)) for _ in range(num_count)]
+                result = sum(numbers)
         
         # Build expression
         expression = '+'.join(map(str, numbers))
-        result = sum(numbers)
         
         return expression, result
         
@@ -242,9 +291,21 @@ class MathDataGenerator:
         
         input_lengths = [len(example['input_ids']) for example in dataset]
         output_lengths = [len(example['output_ids']) for example in dataset]
+        results = [example['result'] for example in dataset]
         
-        print(f"Input sequence length - Minimum: {min(input_lengths)}, Maximum: {max(input_lengths)}, Average: {sum(input_lengths)/len(input_lengths):.2f}")
-        print(f"Output sequence length - Minimum: {min(output_lengths)}, Maximum: {max(output_lengths)}, Average: {sum(output_lengths)/len(output_lengths):.2f}")
+        print(f"Input sequence length - Min: {min(input_lengths)}, Max: {max(input_lengths)}, Avg: {sum(input_lengths)/len(input_lengths):.2f}")
+        print(f"Output sequence length - Min: {min(output_lengths)}, Max: {max(output_lengths)}, Avg: {sum(output_lengths)/len(output_lengths):.2f}")
+        print(f"Result values - Min: {min(results)}, Max: {max(results)}, Avg: {sum(results)/len(results):.2f}")
+        
+        # Print distribution of result ranges for training stability analysis
+        small_results = sum(1 for r in results if r <= 50)
+        medium_results = sum(1 for r in results if 51 <= r <= 100)
+        large_results = sum(1 for r in results if r > 100)
+        
+        print(f"Result distribution:")
+        print(f"  Small (≤50): {small_results} ({small_results/len(results)*100:.1f}%)")
+        print(f"  Medium (51-100): {medium_results} ({medium_results/len(results)*100:.1f}%)")
+        print(f"  Large (>100): {large_results} ({large_results/len(results)*100:.1f}%)")
         
         # Print a few examples
         print("\nExample data:")
@@ -265,7 +326,8 @@ def main():
     parser.add_argument('--max_numbers', type=int, default=5, help='Maximum number of addends')
     parser.add_argument('--max_value', type=int, default=100, help='Maximum value of numbers')
     parser.add_argument('--min_numbers', type=int, default=2, help='Minimum number of addends')
-    parser.add_argument('--output_dir', type=str, default='/dataset', help='Output directory')
+    parser.add_argument('--max_result', type=int, default=200, help='Maximum result value (for training stability)')
+    parser.add_argument('--output_dir', type=str, default='./dataset', help='Output directory')
     parser.add_argument('--train_ratio', type=float, default=0.8, help='Training set ratio')
     parser.add_argument('--val_ratio', type=float, default=0.1, help='Validation set ratio')
     parser.add_argument('--test_ratio', type=float, default=0.1, help='Test set ratio')
@@ -280,11 +342,12 @@ def main():
     generator = MathDataGenerator(
         max_numbers=args.max_numbers,
         max_value=args.max_value,
-        min_numbers=args.min_numbers
+        min_numbers=args.min_numbers,
+        max_result=args.max_result
     )
     
     print("Start generating dataset...")
-    print(f"Configuration: Number of samples={args.num_samples}, Addends={args.min_numbers}-{args.max_numbers}, Number range=1-{args.max_value}")
+    print(f"Configuration: Number of samples={args.num_samples}, Addends={args.min_numbers}-{args.max_numbers}, Number range=1-{args.max_value}, Max result={args.max_result}")
     
     # Generate dataset
     dataset = generator.generate_dataset(args.num_samples)
