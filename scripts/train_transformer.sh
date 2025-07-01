@@ -16,8 +16,7 @@ NC='\033[0m' # No Color
 
 # Default configuration
 DEFAULT_DATA_DIR="./dataset"
-DEFAULT_MAX_INPUT_LEN=20
-DEFAULT_MAX_OUTPUT_LEN=10
+DEFAULT_MAX_SEQ_LEN=30
 DEFAULT_D_MODEL=256
 DEFAULT_N_HEADS=8
 DEFAULT_N_LAYERS=4
@@ -64,8 +63,7 @@ show_usage() {
     echo ""
     echo "Data Options:"
     echo "  --data-dir DIR           Directory containing dataset (default: $DEFAULT_DATA_DIR)"
-    echo "  --max-input-len NUM      Maximum input sequence length (default: $DEFAULT_MAX_INPUT_LEN)"
-    echo "  --max-output-len NUM     Maximum output sequence length (default: $DEFAULT_MAX_OUTPUT_LEN)"
+    echo "  --max-seq-len NUM        Maximum sequence length (default: $DEFAULT_MAX_SEQ_LEN)"
     echo ""
     echo "Model Options:"
     echo "  --d-model NUM            Model dimension (default: $DEFAULT_D_MODEL)"
@@ -105,8 +103,7 @@ show_usage() {
 
 # Initialize variables with defaults
 DATA_DIR=$DEFAULT_DATA_DIR
-MAX_INPUT_LEN=$DEFAULT_MAX_INPUT_LEN
-MAX_OUTPUT_LEN=$DEFAULT_MAX_OUTPUT_LEN
+MAX_SEQ_LEN=$DEFAULT_MAX_SEQ_LEN
 D_MODEL=$DEFAULT_D_MODEL
 N_HEADS=$DEFAULT_N_HEADS
 N_LAYERS=$DEFAULT_N_LAYERS
@@ -130,12 +127,8 @@ while [[ $# -gt 0 ]]; do
             DATA_DIR="$2"
             shift 2
             ;;
-        --max-input-len)
-            MAX_INPUT_LEN="$2"
-            shift 2
-            ;;
-        --max-output-len)
-            MAX_OUTPUT_LEN="$2"
+        --max-seq-len)
+            MAX_SEQ_LEN="$2"
             shift 2
             ;;
         --d-model)
@@ -258,13 +251,8 @@ validate_positive_float() {
 # Validate inputs
 print_step "Validating configuration..."
 
-if ! validate_positive_int "$MAX_INPUT_LEN"; then
-    print_error "Maximum input length must be a positive integer"
-    exit 1
-fi
-
-if ! validate_positive_int "$MAX_OUTPUT_LEN"; then
-    print_error "Maximum output length must be a positive integer"
+if ! validate_positive_int "$MAX_SEQ_LEN"; then
+    print_error "Maximum sequence length must be a positive integer"
     exit 1
 fi
 
@@ -356,8 +344,7 @@ print_step "Training Configuration"
 echo ""
 print_config "Data Configuration:"
 echo "  📁 Dataset directory: $DATA_DIR"
-echo "  📏 Max input length: $MAX_INPUT_LEN"
-echo "  📏 Max output length: $MAX_OUTPUT_LEN"
+echo "  📏 Max sequence length: $MAX_SEQ_LEN"
 echo ""
 print_config "Model Configuration:"
 echo "  🧠 Model dimension: $D_MODEL"
@@ -406,8 +393,7 @@ fi
 # Build Python command
 PYTHON_CMD="python transformer/train_transformer.py"
 PYTHON_CMD="$PYTHON_CMD --data_dir $DATA_DIR"
-PYTHON_CMD="$PYTHON_CMD --max_input_len $MAX_INPUT_LEN"
-PYTHON_CMD="$PYTHON_CMD --max_output_len $MAX_OUTPUT_LEN"
+PYTHON_CMD="$PYTHON_CMD --max_seq_len $MAX_SEQ_LEN"
 PYTHON_CMD="$PYTHON_CMD --d_model $D_MODEL"
 PYTHON_CMD="$PYTHON_CMD --n_heads $N_HEADS"
 PYTHON_CMD="$PYTHON_CMD --n_layers $N_LAYERS"

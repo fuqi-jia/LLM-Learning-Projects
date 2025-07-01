@@ -284,12 +284,10 @@ class MathDataGenerator:
         """
         print(f"Dataset size: {len(dataset)}")
         
-        input_lengths = [len(example['input_ids']) for example in dataset]
-        output_lengths = [len(example['output_ids']) for example in dataset]
+        sequence_lengths = [example['length'] for example in dataset]
         results = [example['result'] for example in dataset]
         
-        print(f"Input sequence length - Min: {min(input_lengths)}, Max: {max(input_lengths)}, Avg: {sum(input_lengths)/len(input_lengths):.2f}")
-        print(f"Output sequence length - Min: {min(output_lengths)}, Max: {max(output_lengths)}, Avg: {sum(output_lengths)/len(output_lengths):.2f}")
+        print(f"Sequence length - Min: {min(sequence_lengths)}, Max: {max(sequence_lengths)}, Avg: {sum(sequence_lengths)/len(sequence_lengths):.2f}")
         print(f"Result values - Min: {min(results)}, Max: {max(results)}, Avg: {sum(results)/len(results):.2f}")
         
         # Print distribution of result ranges for training stability analysis
@@ -308,10 +306,9 @@ class MathDataGenerator:
             print(f"Example {i+1}:")
             print(f"  Expression: {example['expression']}")
             print(f"  Result: {example['result']}")
-            print(f"  Input: {example['input_text']}")
-            print(f"  Output: {example['output_text']}")
-            print(f"  Input IDs: {example['input_ids']}")
-            print(f"  Output IDs: {example['output_ids']}")
+            print(f"  Sequence: {example['sequence_text']}")
+            print(f"  Token IDs: {example['sequence_ids']}")
+            print(f"  Length: {example['length']}")
             print()
 
 

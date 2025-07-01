@@ -24,28 +24,26 @@ torch.cuda.manual_seed(42)
 
 class MathDataset(Dataset):
     """
-    Dataset class for math addition data
+    Dataset class for math addition data (decoder-only architecture)
     """
     
-    def __init__(self, data_path: str, max_input_len: int = 20, max_output_len: int = 10):
+    def __init__(self, data_path: str, max_seq_len: int = 30):
         """
         Initialize dataset
         
         Args:
             data_path: Path to JSON data file
-            max_input_len: Maximum input sequence length
-            max_output_len: Maximum output sequence length
+            max_seq_len: Maximum sequence length
         """
         with open(data_path, 'r', encoding='utf-8') as f:
             self.data = json.load(f)
         
-        self.max_input_len = max_input_len
-        self.max_output_len = max_output_len
+        self.max_seq_len = max_seq_len
         
         # Filter out sequences that are too long
         self.data = [
             item for item in self.data 
-            if len(item['input_ids']) <= max_input_len and len(item['output_ids']) <= max_output_len
+            if item['length'] <= max_seq_len
         ]
         
         print(f"Loaded {len(self.data)} samples from {data_path}")
@@ -56,27 +54,17 @@ class MathDataset(Dataset):
     def __getitem__(self, idx):
         item = self.data[idx]
         
-        # Pad input sequence
-        input_ids = item['input_ids'][:]
-        input_length = len(input_ids)
+        # Get complete sequence
+        sequence_ids = item['sequence_ids'][:]
+        sequence_length = item['length']
         
         # Pad to max length
-        input_ids += [0] * (self.max_input_len - len(input_ids))
-        input_ids = input_ids[:self.max_input_len]
-        
-        # Pad output sequence
-        output_ids = item['output_ids'][:]
-        output_length = len(output_ids)
-        
-        # Pad to max length
-        output_ids += [0] * (self.max_output_len - len(output_ids))
-        output_ids = output_ids[:self.max_output_len]
+        sequence_ids += [0] * (self.max_seq_len - len(sequence_ids))
+        sequence_ids = sequence_ids[:self.max_seq_len]
         
         return {
-            'input_ids': torch.tensor(input_ids, dtype=torch.long),
-            'output_ids': torch.tensor(output_ids, dtype=torch.long),
-            'input_length': input_length,
-            'output_length': output_length,
+            'sequence_ids': torch.tensor(sequence_ids, dtype=torch.long),
+            'sequence_length': sequence_length,
             'expression': item['expression'],
             'result': item['result']
         }
@@ -120,30 +108,27 @@ class MathTrainer:
         self.best_val_accuracy = 0.0
         
     def train_epoch(self):
-        """Train for one epoch"""
+        """Train for one epoch using decoder-only architecture"""
         self.model.train()
         total_loss = 0
         num_batches = len(self.train_loader)
         
         for batch_idx, batch in enumerate(self.train_loader):
             # Move batch to device
-            input_ids = batch['input_ids'].to(self.device)
-            output_ids = batch['output_ids'].to(self.device)
+            sequence_ids = batch['sequence_ids'].to(self.device)
             
-            # Create combined sequence: input + output
-            # For autoregressive training, we need to shift targets
-            combined_seq = torch.cat([input_ids, output_ids], dim=1)
-            
-            # Input is everything except the last token
-            inputs = combined_seq[:, :-1]
+            # For decoder-only training, we shift the sequence:
+            # Input: [0, 1, 2, 3, 4] -> predict -> [1, 2, 3, 4, 5]
+            # So input is everything except the last token
+            inputs = sequence_ids[:, :-1]  # [batch_size, seq_len-1]
             # Targets are everything except the first token
-            targets = combined_seq[:, 1:]
+            targets = sequence_ids[:, 1:]  # [batch_size, seq_len-1]
             
             # Forward pass
             self.optimizer.zero_grad()
-            outputs = self.model(inputs)
+            outputs = self.model(inputs)  # [batch_size, seq_len-1, vocab_size]
             
-            # Calculate loss
+            # Calculate loss (ignore padding tokens)
             loss = self.criterion(outputs.reshape(-1, outputs.size(-1)), targets.reshape(-1))
             
             # Backward pass
@@ -171,13 +156,11 @@ class MathTrainer:
         
         with torch.no_grad():
             for batch in data_loader:
-                input_ids = batch['input_ids'].to(self.device)
-                output_ids = batch['output_ids'].to(self.device)
+                sequence_ids = batch['sequence_ids'].to(self.device)
                 
-                # Create combined sequence
-                combined_seq = torch.cat([input_ids, output_ids], dim=1)
-                inputs = combined_seq[:, :-1]
-                targets = combined_seq[:, 1:]
+                # Same shifting as in training
+                inputs = sequence_ids[:, :-1]
+                targets = sequence_ids[:, 1:]
                 
                 # Forward pass
                 outputs = self.model(inputs)
@@ -187,9 +170,9 @@ class MathTrainer:
                 total_loss += loss.item()
                 
                 # Calculate accuracy (exact match for complete sequences)
-                batch_correct = self.calculate_sequence_accuracy(batch, input_ids)
+                batch_correct = self.calculate_sequence_accuracy(batch)
                 correct_predictions += batch_correct
-                total_predictions += input_ids.size(0)
+                total_predictions += sequence_ids.size(0)
         
         avg_loss = total_loss / len(data_loader)
         accuracy = correct_predictions / total_predictions
@@ -198,37 +181,44 @@ class MathTrainer:
         
         return avg_loss, accuracy
     
-    def calculate_sequence_accuracy(self, batch, input_ids):
-        """Calculate exact sequence match accuracy"""
+    def calculate_sequence_accuracy(self, batch):
+        """Calculate exact sequence match accuracy for complete math expressions"""
         correct = 0
         
-        for i in range(input_ids.size(0)):
-            # Generate prediction for this input
-            input_seq = input_ids[i:i+1]  # Keep batch dimension
-            predicted_output = self.generate_output(input_seq)
-            true_output = batch['output_ids'][i]
+        for i in range(batch['sequence_ids'].size(0)):
+            # Extract the input part (up to '=') for generation
+            sequence_ids = batch['sequence_ids'][i]
+            expression = batch['expression'][i]
+            true_result = batch['result'][i]
             
-            # Remove padding and compare
-            true_output_clean = [x.item() for x in true_output if x.item() != 0]
-            predicted_output_clean = [x for x in predicted_output if x != 0]
-            
-            if predicted_output_clean == true_output_clean:
-                correct += 1
+            # Find the position of '=' token (id=4) to split input from expected output
+            sequence_list = sequence_ids.tolist()
+            try:
+                equals_pos = sequence_list.index(4)  # '=' token
+                input_seq = sequence_ids[:equals_pos+1].unsqueeze(0).to(self.device)  # Include '='
+                
+                # Generate the result part
+                predicted_result = self.generate_result(input_seq)
+                
+                # Compare with true result
+                if predicted_result == true_result:
+                    correct += 1
+            except ValueError:
+                # If '=' not found, skip this example
+                continue
         
         return correct
     
-    def generate_output(self, input_ids, max_output_len=10):
-        """Generate output sequence for given input using autoregressive generation"""
+    def generate_result(self, input_seq, max_gen_len=10):
+        """Generate result for given math expression (up to '=')"""
         self.model.eval()
-
         id_to_token = self.vocab_data['id_to_token']
         
         with torch.no_grad():
-            # Start with input sequence
-            current_seq = input_ids.clone()
-            generated_tokens = []
+            current_seq = input_seq.clone()
+            result_digits = []
             
-            for step in range(max_output_len):
+            for step in range(max_gen_len):
                 # Get predictions for current sequence
                 outputs = self.model(current_seq)
                 
@@ -238,26 +228,32 @@ class MathTrainer:
                 # Use greedy decoding (argmax) for deterministic results
                 next_token = torch.argmax(next_token_logits).item()
                 
-                # Add to generated tokens
-                generated_tokens.append(next_token)
-                # res = ""
-                # for token in generated_tokens:
-                #     res += id_to_token[str(token)]
-                # print(res)
-                
                 # Stop if we predict END token
                 if next_token == 2:  # <END> token
                     break
+                    
+                # If it's a digit token (ids 5-14 correspond to digits 0-9)
+                if 5 <= next_token <= 14:
+                    digit = next_token - 5  # Convert token id to digit
+                    result_digits.append(str(digit))
                 
                 # Add predicted token to sequence for next iteration
                 next_token_tensor = torch.tensor([[next_token]], device=current_seq.device)
                 current_seq = torch.cat([current_seq, next_token_tensor], dim=1)
                 
                 # Safety check to prevent infinite loops
-                if current_seq.size(1) > input_ids.size(1) + max_output_len:
+                if current_seq.size(1) > input_seq.size(1) + max_gen_len:
                     break
-        
-        return generated_tokens
+            
+            # Convert digits to integer result
+            if result_digits:
+                try:
+                    predicted_result = int(''.join(result_digits))
+                    return predicted_result
+                except ValueError:
+                    return -1  # Invalid result
+            else:
+                return -1  # No valid digits generated
     
     def train(self):
         """Main training loop"""
@@ -291,7 +287,8 @@ class MathTrainer:
             if val_accuracy > self.best_val_accuracy:
                 self.best_val_accuracy = val_accuracy
                 self.best_val_loss = val_loss
-                self.save_model('best_model.pth')
+                model_path = os.path.join(self.args.save_dir, 'best_model.pth')
+                self.save_model(model_path)
                 print(f"New best model saved! Validation Accuracy: {val_accuracy:.4f}")
             
             # Early stopping
@@ -304,7 +301,11 @@ class MathTrainer:
                     break
         
         # Load best model for final evaluation
-        self.load_model('best_model.pth')
+        model_path = os.path.join(self.args.save_dir, 'best_model.pth')
+        if os.path.exists(model_path):
+            self.load_model(model_path)
+        else:
+            print("Warning: No best model found, using current model for evaluation")
         
         # Final evaluation on test set
         print("\n" + "="*50)
@@ -331,39 +332,43 @@ class MathTrainer:
         self.model.eval()
         
         # Get a few examples from test set
-        test_examples = []
-        for i, batch in enumerate(self.test_loader):
-            if i >= num_examples:
-                break
-            test_examples.append(batch)
-        
-        id_to_token = self.vocab_data['id_to_token']
-        
-        for i, batch in enumerate(test_examples):
-            if i >= num_examples:
+        examples_shown = 0
+        for batch in self.test_loader:
+            if examples_shown >= num_examples:
                 break
                 
-            input_ids = batch['input_ids'][0:1].to(self.device)  # Take first example
-            true_output = batch['output_ids'][0].tolist()
-            expression = batch['expression'][0]
-            true_result = batch['result'][0]
-            
-            # Generate prediction
-            predicted_output = self.generate_output(input_ids)
-            
-            # Convert to text
-            true_output_text = ''.join([id_to_token[str(x)] for x in true_output if x != 0])
-            predicted_output_text = ''.join([id_to_token[str(x)] for x in predicted_output if x != 0])
-            
-            # Check if correct
-            correct = "✓" if predicted_output == [x for x in true_output if x != 0] else "✗"
-            
-            print(f"Example {i+1}: {correct}")
-            print(f"  Expression: {expression}")
-            print(f"  True result: {true_result}")
-            print(f"  True output: {true_output_text}")
-            print(f"  Predicted: {predicted_output_text}")
-            print()
+            batch_size = batch['sequence_ids'].size(0)
+            for i in range(min(batch_size, num_examples - examples_shown)):
+                sequence_ids = batch['sequence_ids'][i]
+                expression = batch['expression'][i]
+                true_result = batch['result'][i]
+                
+                # Find '=' position to create input sequence
+                sequence_list = sequence_ids.tolist()
+                try:
+                    equals_pos = sequence_list.index(4)  # '=' token
+                    input_seq = sequence_ids[:equals_pos+1].unsqueeze(0).to(self.device)
+                    
+                    # Generate prediction
+                    predicted_result = self.generate_result(input_seq)
+                    
+                    # Check if correct
+                    correct = "✓" if predicted_result == true_result else "✗"
+                    
+                    print(f"Example {examples_shown+1}: {correct}")
+                    print(f"  Expression: {expression}")
+                    print(f"  True result: {true_result}")
+                    print(f"  Predicted result: {predicted_result}")
+                    print()
+                    
+                    examples_shown += 1
+                    
+                except ValueError:
+                    # If '=' not found, skip this example
+                    continue
+                    
+            if examples_shown >= num_examples:
+                break
     
     def plot_training_curves(self):
         """Plot training and validation curves"""
@@ -409,7 +414,7 @@ class MathTrainer:
     
     def load_model(self, filepath):
         """Load model checkpoint"""
-        checkpoint = torch.load(filepath, map_location=self.device)
+        checkpoint = torch.load(filepath, map_location=self.device, weights_only=False)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         return checkpoint
@@ -421,10 +426,8 @@ def main():
     # Data arguments
     parser.add_argument('--data_dir', type=str, default='./dataset',
                         help='Directory containing train.json, val.json, test.json, vocab.json')
-    parser.add_argument('--max_input_len', type=int, default=20,
-                        help='Maximum input sequence length')
-    parser.add_argument('--max_output_len', type=int, default=10,
-                        help='Maximum output sequence length')
+    parser.add_argument('--max_seq_len', type=int, default=30,
+                        help='Maximum sequence length')
     
     # Model arguments
     parser.add_argument('--d_model', type=int, default=256,
@@ -485,15 +488,15 @@ def main():
     # Create datasets
     train_dataset = MathDataset(
         os.path.join(args.data_dir, 'train.json'),
-        args.max_input_len, args.max_output_len
+        args.max_seq_len
     )
     val_dataset = MathDataset(
         os.path.join(args.data_dir, 'val.json'),
-        args.max_input_len, args.max_output_len
+        args.max_seq_len
     )
     test_dataset = MathDataset(
         os.path.join(args.data_dir, 'test.json'),
-        args.max_input_len, args.max_output_len
+        args.max_seq_len
     )
     
     # Create data loaders
@@ -519,7 +522,7 @@ def main():
         n_heads=args.n_heads,
         n_layers=args.n_layers,
         d_ff=args.d_ff,
-        max_len=args.max_input_len + args.max_output_len,
+        max_len=args.max_seq_len,
         dropout=args.dropout
     )
     
